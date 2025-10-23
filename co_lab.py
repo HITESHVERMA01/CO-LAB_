@@ -1,14 +1,18 @@
+
 import streamlit as st
 from supabase import create_client, Client
 from datetime import datetime
-import pandas as pd # Still used for the ML part
+import pandas as pd
 import os
 
+# ML Imports
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# --- Page Config ---
 st.set_page_config(layout="wide", page_title="CO:LAB - Project Partner Finder")
 
+# --- Supabase Connection ---
 try:
     url: str = st.secrets["SUPABASE_URL"]
     key: str = st.secrets["SUPABASE_KEY"]
@@ -19,7 +23,6 @@ except Exception as e:
 
 
 # --- "PRO" CSS - FINAL VERSION ---
-# This CSS is more robust and styles all parts of the tab container.
 def inject_custom_css():
     st.markdown("""
         <style>
@@ -28,7 +31,7 @@ def inject_custom_css():
 
             /* --- Base & Font --- */
             * {
-                font-family: 'Space Grotesk', sans-serif;
+                font-family: 'Space+Grotesk', sans-serif;
             }
 
             /* --- Animated Gradient Background --- */
@@ -54,6 +57,8 @@ def inject_custom_css():
             }
             h3 {
                 color: #00F0FF; /* Neon Blue Accent */
+                display: flex; /* Aligns header text with icon */
+                align-items: center;
             }
 
             /* --- Glassmorphism Containers --- */
@@ -94,10 +99,17 @@ def inject_custom_css():
                 color: #00F0FF;
                 font-weight: 700;
             }
-            /* This styles the panel *behind* the tab content */
             .stTabs [data-baseweb="tab-panel"] {
                 background: transparent;
                 padding-top: 2em;
+            }
+            
+            /* --- Animated Icons (now used in headers) --- */
+            lord-icon {
+                width: 40px;
+                height: 40px;
+                margin-right: 10px;
+                filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.7));
             }
             
             /* --- Form Inputs (Text, Select) --- */
@@ -151,6 +163,30 @@ def inject_custom_css():
                 text-shadow: 0 0 10px #00F0FF;
             }
             
+            /* --- Profile Mini-Card (Replaces DataFrame) --- */
+            .profile-mini-card {
+                background: rgba(26, 26, 38, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 1.5em;
+                margin-bottom: 1em;
+                transition: all 0.3s ease;
+            }
+            .profile-mini-card:hover {
+                border-color: #00F0FF;
+                box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+                transform: translateY(-3px);
+            }
+            .profile-mini-card h4 {
+                color: #00F0FF;
+                margin: 0 0 0.5em 0;
+            }
+            .profile-mini-card p {
+                color: #E0E0E0;
+                font-size: 0.9em;
+                margin: 0.2em 0;
+            }
+            
             /* --- Chat Message Styling --- */
             div[data-testid="chat-message-container"] {
                 background: rgba(0, 0, 0, 0.2);
@@ -162,6 +198,9 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 
+# --- DATA FUNCTIONS (Supabase) ---
+
+@st.cache_data(ttl=300) 
 def get_all_profiles():
     try:
         response = supabase.table('profiles').select("*").execute()
@@ -179,19 +218,18 @@ def upsert_profile(email, name, subject, skills, goals):
             'skills': skills,
             'goals': goals
         }).execute()
+        st.cache_data.clear() 
         return data
     except Exception as e:
         st.error(f"Error saving profile: {e}")
         return None
 
+@st.cache_data(ttl=5) 
 def get_chat_history(user_email, match_email):
     try:
-        # Get messages from A to B
         response1 = supabase.table('messages').select("*").eq('sender_email', user_email).eq('receiver_email', match_email).execute()
-        # Get messages from B to A
         response2 = supabase.table('messages').select("*").eq('sender_email', match_email).eq('receiver_email', user_email).execute()
         
-        # Combine and sort messages
         all_messages = response1.data + response2.data
         all_messages.sort(key=lambda x: x['created_at'])
         return all_messages
@@ -206,19 +244,21 @@ def send_message(sender, receiver, message):
             'receiver_email': receiver,
             'message': message
         }).execute()
+        st.cache_data.clear() 
         return data
     except Exception as e:
         st.error(f"Error sending message: {e}")
         return None
 
+# --- ML Matchmaker Function (Now uses Supabase data) ---
+
 def get_matches(current_user_email, all_profiles_data):
     if not all_profiles_data or len(all_profiles_data) < 2:
         return []
         
-    # Convert list of dicts to a Pandas DataFrame
     df = pd.DataFrame(all_profiles_data)
     
-        df['combined_text'] = df['skills'].fillna('') + " " + df['goals'].fillna('')
+    df['combined_text'] = df['skills'].fillna('') + " " + df['goals'].fillna('')
     vectorizer = TfidfVectorizer(stop_words='english')
     tfidf_matrix = vectorizer.fit_transform(df['combined_text'])
     cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
@@ -226,7 +266,7 @@ def get_matches(current_user_email, all_profiles_data):
     try:
         user_index_series = df.index[df['email'] == current_user_email]
         if user_index_series.empty:
-            st.error(f"Error: Your email '{current_user_email}' not found in the database.")
+            st.error(f"Error: Your email '{current_user_email}' not found.")
             return []
         user_index = user_index_series[0]
         
@@ -257,23 +297,63 @@ def get_matches(current_user_email, all_profiles_data):
             
     return top_matches
 
+# --- Initialize CSS ---
 inject_custom_css()
+
+# --- NEW: Inject the Lordicon SCRIPT (This is the fix) ---
+st.markdown('<script src="https://cdn.lordicon.com/lordicon.js"></script>', unsafe_allow_html=True)
+
+
+# --- Main App ---
 st.title("CO:LAB 🚀")
 st.header("Find Your Perfect Project Partner")
-st.write("Create your profile, find smart matches, and start collaborating. (v5.0 Cloud Edition)")
+st.write("Create your profile, find smart matches, and start collaborating. (v6.1 Stable Build)")
 st.divider()
 
+# --- Initialize Session State for Chat ---
 if 'current_chat' not in st.session_state:
     st.session_state.current_chat = None
     st.session_state.current_chat_name = None
     st.session_state.current_user_email = None
 
-tab_matches, tab_profile, tab_all_members = st.tabs(["Find Matches 🧠", "My Profile 👤", "All Members 🌐"])
+# --- NEW: Animated Icon HTML ---
+icon_matches = """
+<lord-icon
+    src="https://cdn.lordicon.com/lthGlgqe.json"
+    trigger="loop"
+    delay="1000"
+    colors="primary:#ffffff,secondary:#00a3ff">
+</lord-icon>
+"""
 
+icon_profile = """
+<lord-icon
+    src="https://cdn.lordicon.com/kthelypq.json"
+    trigger="loop"
+    delay="1000"
+    colors="primary:#ffffff,secondary:#00a3ff">
+</lord-icon>
+"""
+
+icon_members = """
+<lord-icon
+    src="https://cdn.lordicon.com/yxyampms.json"
+    trigger="loop"
+    delay="1000"
+    colors="primary:#ffffff,secondary:#00a3ff">
+</lord-icon>
+"""
+
+# --- NEW: TAB LAYOUT with EMOJI labels (This is the fix) ---
+tab_matches, tab_profile, tab_all_members = st.tabs(["🧠 Find Matches", "👤 My Profile", "🌐 All Members"])
+
+
+# --- Tab 1: Find Matches & Chat ---
 with tab_matches:
-    st.header("Find & Chat With Your Matches")
+    # --- NEW: Header with animated icon ---
+    st.markdown(f"<h3>{icon_matches} Find & Chat With Your Matches</h3>", unsafe_allow_html=True)
     
-    all_profiles = get_all_profiles() # Fetch all profiles ONCE
+    all_profiles = get_all_profiles()
     
     if not all_profiles:
         st.info("Create your profile in the 'My Profile' tab to find matches!")
@@ -322,7 +402,8 @@ with tab_matches:
         except Exception as e:
             st.error(f"An error occurred during matching: {e}")
 
-        st.divider()
+    # --- DEDICATED CHAT INTERFACE ---
+    st.divider()
     if st.session_state.current_chat:
         st.header(f"Chat with {st.session_state.current_chat_name}")
         st.markdown("---")
@@ -334,13 +415,15 @@ with tab_matches:
             name = "Me" if is_me else st.session_state.current_chat_name
             with st.chat_message(name=name, avatar="🧑‍💻" if is_me else "🤖"):
                 st.write(msg['message'])
-                # Format the timestamp
                 ts = datetime.fromisoformat(msg['created_at']).strftime('%Y-%m-%d %I:%M %p')
                 st.caption(f"_{ts}_")
     
+# --- Tab 2: Profile Creation ---
 with tab_profile:
-    st.header("Create or Update Your Profile")
-    st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+    # --- NEW: Header with animated icon ---
+    st.markdown(f"<h3>{icon_profile} Create or Update Your Profile</h3>", unsafe_allow_html=True)
+    
+    st.markdown('<div class="glass-container">', unsafe_allow_html=True) 
     
     with st.form(key='profile_form'):
         email = st.text_input("My Email (This is your unique ID)", help="Required. Used to identify you and for chat.")
@@ -362,9 +445,10 @@ with tab_profile:
         )
         submit_button = st.form_submit_button(label="Create / Update My Profile", use_container_width=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True) 
 
-        if submit_button:
+    # --- Form Submission Logic (NEW) ---
+    if submit_button:
         if not email or not name or not subject or not skills or not goals:
             st.warning("Please fill out all the fields before submitting.")
         else:
@@ -376,29 +460,46 @@ with tab_profile:
                 else:
                     st.error("There was an error saving your profile.")
 
+# --- Tab 3: All Members (NEW CUSTOM GRID) ---
 with tab_all_members:
-    st.header("All Members in CO:LAB")
+    # --- NEW: Header with animated icon ---
+    st.markdown(f"<h3>{icon_members} All Members in CO:LAB</h3>", unsafe_allow_html=True)
     
     all_profiles_data = get_all_profiles()
     
     if not all_profiles_data:
         st.info("Database is empty. Create a profile to get started!")
     else:
-        # Convert list of dicts to DataFrame for display
-        df_profiles = pd.DataFrame(all_profiles_data)
-                df_profiles = df_profiles.drop(columns=['id', 'created_at'], errors='ignore')
+        st.write(f"Showing {len(all_profiles_data)} members.")
+        st.divider()
         
-        st.dataframe(df_profiles, use_container_width=True)
+        cols = st.columns(3)
+        for i, profile in enumerate(all_profiles_data):
+            skills = profile['skills'].replace('\\n', ', ') if profile['skills'] else "No skills listed"
+            goals = profile['goals'].replace('\\n', ', ') if profile['goals'] else "No goals listed"
+            
+            with cols[i % 3]:
+                st.markdown(f"""
+                <div class="profile-mini-card">
+                    <h4>{profile['name']}</h4>
+                    <p><strong>Email:</strong> {profile['email']}</p>
+                    <p><strong>Class:</strong> {profile['class']}</p>
+                    <hr style="border-color: rgba(255, 255, 255, 0.1); margin: 0.5em 0;">
+                    <p><strong>Skills:</strong> {skills}</p>
+                </div>
+                """, unsafe_allow_html=True)
         
-        # Download Button
+        st.divider()
         st.download_button(
             label="Download All Profiles (CSV)",
-            data=df_profiles.to_csv(index=False).encode('utf-8'),
+            data=pd.DataFrame(all_profiles_data).to_csv(index=False).encode('utf-8'),
             file_name='all_profiles.csv',
             mime='text/csv',
             use_container_width=True
         )
 
+
+# --- MAIN CHAT INPUT (Stays at the bottom) ---
 if st.session_state.current_chat:
     if prompt := st.chat_input(f"Message {st.session_state.current_chat_name}..."):
         send_message(st.session_state.current_user_email, st.session_state.current_chat, prompt)
