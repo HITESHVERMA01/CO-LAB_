@@ -225,7 +225,6 @@ def upsert_profile(email, name, subject, skills, goals):
         st.error(f"Error saving profile: {e}")
         return None
 
-@st.cache_data(ttl=5) 
 def get_chat_history(user_email, match_email):
     try:
         response1 = supabase.table('messages').select("*").eq('sender_email', user_email).eq('receiver_email', match_email).execute()
