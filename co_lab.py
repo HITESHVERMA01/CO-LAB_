@@ -406,20 +406,44 @@ with tab_matches:
     # --- DEDICATED CHAT INTERFACE ---
     st.divider()
     if st.session_state.current_chat:
-        st.header(f"Chat with {st.session_state.current_chat_name}")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.header(f"💬 Chat with {st.session_state.current_chat_name}")
+        with col2:
+            if st.button("Close Chat", key="close_chat_btn"):
+                st.session_state.current_chat = None
+                st.session_state.current_chat_name = None
+                st.rerun()
+        
         st.markdown("---")
         
         chat_history = get_chat_history(st.session_state.current_user_email, st.session_state.current_chat)
         
-        for msg in chat_history:
-            is_me = (msg['sender_email'] == st.session_state.current_user_email)
-            name = "Me" if is_me else st.session_state.current_chat_name
-            with st.chat_message(name=name, avatar="🧑‍💻" if is_me else "🤖"):
-                st.write(msg['message'])
-                ts = datetime.fromisoformat(msg['created_at']).strftime('%Y-%m-%d %I:%M %p')
-                st.caption(f"_{ts}_")
+        if chat_history:
+            for msg in chat_history:
+                is_me = (msg['sender_email'] == st.session_state.current_user_email)
+                name = "You" if is_me else st.session_state.current_chat_name
+                with st.chat_message(name=name, avatar="�" if is_me else "👥"):
+                    st.write(msg['message'])
+                    ts = datetime.fromisoformat(msg['created_at']).strftime('%Y-%m-%d %I:%M %p')
+                    st.caption(f"_{ts}_")
+        else:
+            st.info("No messages yet. Start the conversation!")
         
-        st.info("💬 Messages update automatically every 2 seconds!")
+        st.markdown("---")
+        st.write("**Send a Message:**")
+        
+        col_input, col_send = st.columns([4, 1])
+        with col_input:
+            message_text = st.text_input("Type your message...", key="message_input", placeholder="Say something nice...")
+        with col_send:
+            send_btn = st.button("Send ➤", key="send_btn", use_container_width=True)
+        
+        if send_btn and message_text.strip():
+            send_message(st.session_state.current_user_email, st.session_state.current_chat, message_text.strip())
+            st.success("Message sent! ✅")
+            time.sleep(0.5)
+            st.rerun()
     
 # --- Tab 2: Profile Creation ---
 with tab_profile:
@@ -500,25 +524,3 @@ with tab_all_members:
             mime='text/csv',
             use_container_width=True
         )
-
-
-# --- MAIN CHAT INPUT (Stays at the bottom) ---
-if st.session_state.current_chat:
-    if prompt := st.chat_input(f"Message {st.session_state.current_chat_name}..."):
-        send_message(st.session_state.current_user_email, st.session_state.current_chat, prompt)
-        st.rerun()
-
-import streamlit.components.v1 as components
-
-if st.session_state.current_chat:
-    components.html(
-        """
-        <script>
-        // Auto-refresh the page every 2 seconds to fetch new messages
-        setTimeout(function() {
-            window.location.reload();
-        }, 2000);
-        </script>
-        """,
-        height=0
-    )
