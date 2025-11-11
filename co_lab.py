@@ -4,6 +4,7 @@ from supabase import create_client, Client
 from datetime import datetime
 import pandas as pd
 import os
+import time
 
 # ML Imports
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -315,6 +316,7 @@ if 'current_chat' not in st.session_state:
     st.session_state.current_chat = None
     st.session_state.current_chat_name = None
     st.session_state.current_user_email = None
+    st.session_state.last_message_time = None
 
 # --- NEW: Animated Icon HTML ---
 icon_matches = """
@@ -417,6 +419,8 @@ with tab_matches:
                 st.write(msg['message'])
                 ts = datetime.fromisoformat(msg['created_at']).strftime('%Y-%m-%d %I:%M %p')
                 st.caption(f"_{ts}_")
+        
+        st.info("💬 Messages update automatically every 2 seconds!")
     
 # --- Tab 2: Profile Creation ---
 with tab_profile:
@@ -504,3 +508,18 @@ if st.session_state.current_chat:
     if prompt := st.chat_input(f"Message {st.session_state.current_chat_name}..."):
         send_message(st.session_state.current_user_email, st.session_state.current_chat, prompt)
         st.rerun()
+
+import streamlit.components.v1 as components
+
+if st.session_state.current_chat:
+    components.html(
+        """
+        <script>
+        // Auto-refresh the page every 2 seconds to fetch new messages
+        setTimeout(function() {
+            window.location.reload();
+        }, 2000);
+        </script>
+        """,
+        height=0
+    )
