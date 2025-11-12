@@ -1,4 +1,6 @@
 streamlit
+supabase
 pandas
 scikit-learn
-supabase
+requests
+openai
